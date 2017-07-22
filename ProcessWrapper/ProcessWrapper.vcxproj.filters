@@ -11,9 +11,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Utils.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="Args.h">
       <Filter>Source Files</Filter>
     </ClInclude>
@@ -24,9 +21,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ProcessWrapper.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Utils.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Args.c">

@@ -1,5 +1,9 @@
 #pragma once
-#include "Utils.h"
+
+#define SUCCESS 0
+#define FAILURE -1
+
+typedef int RESULT;
 
 BOOL errors_init();
 BOOL errors_destroy();

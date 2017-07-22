@@ -148,16 +148,9 @@
       </DeploymentContent>
     </ClCompile>
     <ClCompile Include="Errors.c" />
-    <ClCompile Include="Utils.c">
-      <FileType>CppCode</FileType>
-      <DeploymentContent>false</DeploymentContent>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-      </DeploymentContent>
-    </ClCompile>
     <ClInclude Include="Args.h" />
     <ClInclude Include="Errors.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="Utils.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ProcessWrapper.c" />
