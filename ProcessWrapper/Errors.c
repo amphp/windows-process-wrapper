@@ -98,8 +98,13 @@ BOOL error_push(char* format, ...)
     va_list ap;
 
     va_start(ap, format);
-    vasprintf(&message, format, ap);
+    int length = vasprintf(&message, format, ap);
     va_end(ap);
+
+	/* trim whitespace from the end of the string */
+	for (int i = length - 1; message[i] == ' ' || message[i] == '\t' || message[i] == '\r' || message[i] == '\n'; i--) {
+		message[i] = 0;
+	}
 
     item->message = message;
     InterlockedPushEntrySList(errors, &item->entry);
