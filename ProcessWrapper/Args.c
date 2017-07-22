@@ -15,7 +15,7 @@ typedef enum _arg_parse_result {
 
 static arg_parse_result_t parse_server_address_opt(program_arguments_t* program_arguments, char* opt_name, char* value);
 static arg_parse_result_t parse_server_port_opt(program_arguments_t* program_arguments, char* opt_name, char* value);
-static arg_parse_result_t parse_process_label_opt(program_arguments_t* program_arguments, char* opt_name, char* value);
+static arg_parse_result_t parse_process_token_size_opt(program_arguments_t* program_arguments, char* opt_name, char* value);
 static arg_parse_result_t parse_exe_cwd_opt(program_arguments_t* program_arguments, char* opt_name, char* value);
 
 typedef arg_parse_result_t (arg_parser)(program_arguments_t* program_arguments, char* opt_name);
@@ -31,7 +31,7 @@ typedef struct _arg_handler {
 static arg_handler_t arg_handlers[ARG_HANDLER_COUNT] = {
 	{ .name = "address", .parse_value = parse_server_address_opt },
 	{ .name = "port", .parse_value = parse_server_port_opt },
-	{ .name = "process-label", .parse_value = parse_process_label_opt },
+	{ .name = "token-size", .parse_value = parse_process_token_size_opt },
 	{ .name = "cwd", .parse_value = parse_exe_cwd_opt },
 };
 
@@ -94,14 +94,20 @@ static arg_parse_result_t parse_server_port_opt(program_arguments_t* program_arg
         return ARG_PARSE_SUCCESS;
     }
 
-    error_push("Invalid value for server port: %d", program_arguments->server_port);
+    error_push("Invalid server port: %d", program_arguments->server_port);
     return ARG_PARSE_ERROR;
 }
 
-static arg_parse_result_t parse_process_label_opt(program_arguments_t* program_arguments, char* opt_name, char* value)
+static arg_parse_result_t parse_process_token_size_opt(program_arguments_t* program_arguments, char* opt_name, char* value)
 {
-    program_arguments->process_label = value;
-    return ARG_PARSE_SUCCESS;
+    program_arguments->token_size = atoi(value);
+
+	if (program_arguments->token_size > 0) {
+		return ARG_PARSE_SUCCESS;
+	}
+
+	error_push("Invalid token size: %d", program_arguments->token_size);
+	return ARG_PARSE_SUCCESS;
 }
 
 static arg_parse_result_t parse_exe_cwd_opt(program_arguments_t* program_arguments, char* opt_name, char* value)
@@ -174,14 +180,14 @@ static void init_program_arguments(program_arguments_t* program_arguments)
     program_arguments->server_port = 0;
     memset(&program_arguments->server_address, 0, sizeof(in_addr_t));
     program_arguments->server_address_is_in6 = -1;
-    program_arguments->process_label = NULL;
+    program_arguments->token_size = 0;
     program_arguments->exe_command_line = NULL;
     program_arguments->exe_cwd = NULL;
 }
 
 static BOOL validate_program_arguments(program_arguments_t* program_arguments)
 {
-    if (program_arguments->process_label == NULL) {
+    if (program_arguments->token_size == 0) {
         error_push("Process label not supplied");
         return FALSE;
     }

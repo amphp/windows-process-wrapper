@@ -122,12 +122,12 @@ char *error_pop()
 /*
  * Output error messages to stderr and return -1
  */
-RESULT errors_exit()
+RESULT errors_output_all()
 {
     char *message;
 
     while (NULL != (message = error_pop())) {
-        fprintf(stderr, message);
+		fprintf(stderr, "%s\n", message);
     }
 
     errors_destroy();

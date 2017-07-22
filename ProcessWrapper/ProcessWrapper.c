@@ -42,7 +42,12 @@ typedef struct _file_socket_pair {
 
 WSADATA wsa_data;
 
-static program_arguments_t program_arguments;
+static struct {
+	program_arguments_t arguments;
+	WSABUF client_token;
+	WSABUF server_token;
+} globals;
+
 
 static BOOL socket_connect(socket_info_t* socket_info)
 {
@@ -57,20 +62,20 @@ static BOOL socket_connect(socket_info_t* socket_info)
         return FALSE;
     }
 
-    if (program_arguments.server_address_is_in6) {
+    if (globals.arguments.server_address_is_in6) {
         struct sockaddr_in6 addr;
         namelen = sizeof(addr);
         addr.sin6_family = AF_INET6;
-        addr.sin6_addr = *program_arguments.server_address.in6_addr;
-        addr.sin6_flowinfo = 0; /* todo: I have no idea what this is for... */
-        addr.sin6_port = htons(program_arguments.server_port);
+        addr.sin6_addr = *globals.arguments.server_address.in6_addr;
+        addr.sin6_flowinfo = 0; /* I have no idea what this is for, but it doesn't seem to matter */
+        addr.sin6_port = htons(globals.arguments.server_port);
         sockaddr = (SOCKADDR*)&addr;
     } else {
         struct sockaddr_in addr;
         namelen = sizeof(addr);
         addr.sin_family = AF_INET;
-        addr.sin_addr = *program_arguments.server_address.in_addr;
-        addr.sin_port = htons(program_arguments.server_port);
+        addr.sin_addr = *globals.arguments.server_address.in_addr;
+        addr.sin_port = htons(globals.arguments.server_port);
         sockaddr = (SOCKADDR*)&addr;
     }
 
@@ -97,7 +102,6 @@ static BOOL socket_connect(socket_info_t* socket_info)
  */
 static BOOL socket_process_connect_writable(socket_info_t* socket_info)
 {
-    WSABUF buffer;
     DWORD bytes_written;
     u_long non_blocking = 0;
 
@@ -108,18 +112,22 @@ static BOOL socket_process_connect_writable(socket_info_t* socket_info)
         return FALSE;
     }
 
-    buffer.len = asprintf(&buffer.buf, "%d;%s\n", socket_info->id, program_arguments.process_label);
+	char socket_id = (char)socket_info->id;
+	WSABUF socket_id_buffer = { .len = 1, .buf = &socket_id };
 
-    result = WSASend(socket_info->socket, &buffer, 1, &bytes_written, 0, NULL, NULL);
-    free(buffer.buf);
+	WSABUF buffers[2];
+	buffers[0] = socket_id_buffer;
+	buffers[1] = globals.client_token;
+
+    result = WSASend(socket_info->socket, buffers, 2, &bytes_written, 0, NULL, NULL);
 
     if (result == SOCKET_ERROR) {
         system_error_push(WSAGetLastError(), "Failed to send handshake to socket #%d", socket_info->id);
         return FALSE;
     }
 
-    if (bytes_written != buffer.len) {
-        error_push("Failed to send handshake to socket #%d: sent %d of %d bytes", socket_info->id, bytes_written, buffer.len);
+    if (bytes_written != globals.client_token.len + 1) {
+        error_push("Failed to send handshake to socket #%d: sent %d of %d bytes", socket_info->id, bytes_written, globals.client_token.len + 1);
         return FALSE;
     }
 
@@ -136,8 +144,8 @@ static BOOL socket_process_connect_readable(socket_info_t* socket_info)
     WSABUF buffer;
     DWORD bytes_read, flags = 0;
 
-    buffer.buf = malloc(2);
-    buffer.len = 2;
+	buffer.len = globals.server_token.len + 1;
+	buffer.buf = malloc(buffer.len);
 
     int result = WSARecv(socket_info->socket, &buffer, 1, &bytes_read, &flags, NULL, NULL);
 
@@ -147,26 +155,25 @@ static BOOL socket_process_connect_readable(socket_info_t* socket_info)
         return FALSE;
     }
 
+	if (bytes_read == 1 && buffer.buf[0] != SUCCESS) {
+		error_push("Handshake failed for socket #%d: Server rejected connection with code %d", socket_info->id, buffer.buf[0]);
+		free(buffer.buf);
+		return FALSE;
+	}
+
     if (bytes_read != buffer.len) {
         error_push("Failed to read handshake data from socket #%d: recieved %d of expected %d bytes", socket_info->id, bytes_read, buffer.len);
         free(buffer.buf);
         return FALSE;
     }
 
-    if (buffer.buf[1] != '\n') {
-        error_push("Handshake failed for socket #%d: Invalid data recieved: 0x%02X 0x%02X", socket_info->id, (int)buffer.buf[0], (int)buffer.buf[1]);
-        free(buffer.buf);
-        return FALSE;
-    }
+	result = memcmp(buffer.buf + 1, globals.server_token.buf, globals.server_token.len);
+	free(buffer.buf);
 
-    char code = buffer.buf[0];
-    free(buffer.buf);
-
-
-    if (code != SUCCESS) {
-        error_push("Handshake failed for socket #%d: Server rejected connection with code %d", socket_info->id, code);
-        return FALSE;
-    }
+	if (result != 0) {
+		error_push("Handshake failed for socket #%d: Invalid server token", socket_info->id);
+		return FALSE;
+	}
 
     socket_info->state = SOCKET_STATE_CONNECTED;
 
@@ -209,7 +216,7 @@ static BOOL socket_set_have_pending_connect(socket_info_t **sockets)
  */
 static BOOL socket_set_create(socket_info_t** sockets)
 {
-    int address_family = program_arguments.server_address_is_in6 ? AF_INET6 : AF_INET;
+    int address_family = globals.arguments.server_address_is_in6 ? AF_INET6 : AF_INET;
 
     for (int i = 0; i < SOCKET_COUNT; i++) {
         socket_info_t* socket_info = malloc(sizeof(socket_info_t));
@@ -325,13 +332,13 @@ static BOOL process_start(process_info_t *process_info)
 {
     BOOL result = CreateProcess(
         NULL,
-        program_arguments.exe_command_line,
+		globals.arguments.exe_command_line,
         &process_info->security_attributes, // process security attributes 
         &process_info->security_attributes, // primary thread security attributes 
         TRUE, // handles are inherited 
         CREATE_NO_WINDOW | NORMAL_PRIORITY_CLASS,
         NULL, // use parent's environment 
-        program_arguments.exe_cwd,
+		globals.arguments.exe_cwd,
         &process_info->start_info,
         &process_info->process_info
     );
@@ -356,10 +363,8 @@ static DWORD WINAPI copy_file_to_socket(LPVOID param)
 	buffer.buf = malloc(BUFFER_SIZE);
 	buffer.len = BUFFER_SIZE;
 
-	while (1) {
-		int result = ReadFile(pair->file, buffer.buf, BUFFER_SIZE, &bytes_read, NULL);
-
-		if (!result) {
+	while (TRUE) {
+		if (!ReadFile(pair->file, buffer.buf, BUFFER_SIZE, &bytes_read, NULL)) {
 			system_error_push(GetLastError(), "Failed to read from child process pipe #%d", pair->id);
 			return FAILURE;
 		}
@@ -368,9 +373,7 @@ static DWORD WINAPI copy_file_to_socket(LPVOID param)
 			break;
 		}
 
-		result = WSASend(pair->socket, &buffer, 1, &bytes_written, flags, NULL, NULL);
-
-		if (result == SOCKET_ERROR) {
+		if (WSASend(pair->socket, &buffer, 1, &bytes_written, flags, NULL, NULL) == SOCKET_ERROR) {
 			system_error_push(WSAGetLastError(), "Failed to send data to socket #%d", pair->id);
 			return FAILURE;
 		}
@@ -397,9 +400,7 @@ static DWORD WINAPI copy_socket_to_file(LPVOID param)
 	buffer.len = BUFFER_SIZE;
 
 	while (1) {
-		int result = WSARecv(pair->socket, &buffer, 1, &bytes_read, &flags, NULL, NULL);
-
-		if (result == SOCKET_ERROR) {
+		if (WSARecv(pair->socket, &buffer, 1, &bytes_read, &flags, NULL, NULL) == SOCKET_ERROR) {
 			system_error_push(GetLastError(), "Failed to read from socket #%d", pair->id);
 			return FAILURE;
 		}
@@ -408,9 +409,7 @@ static DWORD WINAPI copy_socket_to_file(LPVOID param)
 			break;
 		}
 
-		result = WriteFile(pair->file, buffer.buf, bytes_read, &bytes_written, NULL);
-
-		if (!result) {
+		if (!WriteFile(pair->file, buffer.buf, bytes_read, &bytes_written, NULL)) {
 			system_error_push(GetLastError(), "Failed to send data to child process pipe #%d", pair->id);
 			return FAILURE;
 		}
@@ -425,6 +424,31 @@ static DWORD WINAPI copy_socket_to_file(LPVOID param)
 	closesocket(pair->socket);
 	
 	return SUCCESS;
+}
+
+BOOL get_tokens_from_stdin()
+{
+	DWORD bytes_read;
+	HANDLE stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
+	char *buffer = malloc(globals.arguments.token_size);
+
+	if (!ReadFile(stdin_handle, buffer, globals.arguments.token_size, &bytes_read, NULL)) {
+		system_error_push(GetLastError(), "Failed to read tokens from stdin");
+		return FALSE;
+	}
+
+	if (bytes_read != globals.arguments.token_size) {
+		error_push("Failed to read tokens from stdin: recieved %d of expected %d bytes", bytes_read, globals.arguments.token_size);
+		return FALSE;
+	}
+
+	globals.client_token.len = globals.arguments.token_size / 2;
+	globals.client_token.buf = buffer;
+
+	globals.server_token.len = globals.arguments.token_size - globals.client_token.len;
+	globals.server_token.buf = buffer + globals.client_token.len;
+
+	return TRUE;
 }
 
 int main(int argc, char** argv)
@@ -443,13 +467,18 @@ int main(int argc, char** argv)
     }
 
     /* Parse args */
-    if (!parse_opts(&program_arguments, argc, argv)) {
-        return errors_exit();
+    if (!parse_opts(&globals.arguments, argc, argv)) {
+        return errors_output_all();
     }
+
+	/* Get process identifier token from stdin */
+	if (!get_tokens_from_stdin()) {
+		return errors_output_all();
+	}
 
     /* Connect to server */
     if (!socket_set_create(sockets)) {
-        return errors_exit();
+        return errors_output_all();
     }
 
     HANDLE connect_thread = CreateThread(NULL, 0, socket_set_connect, &sockets, 0, NULL);
@@ -459,27 +488,27 @@ int main(int argc, char** argv)
     ZeroMemory(&process_info, sizeof(process_info_t));
 
     if (!process_init(&process_info)) {
-        return errors_exit();
+        return errors_output_all();
     }
 
     /* Wait until server is connected */
     if (WaitForSingleObject(connect_thread, INFINITE) == WAIT_FAILED) {
         system_error_push(GetLastError(), "Wait operation failed");
-        return errors_exit();
+        return errors_output_all();
     }
         
     if (!GetExitCodeThread(connect_thread, &exit_code)) {
         system_error_push(GetLastError(), "Retrieving connect thread exit code failed");
-        return errors_exit();
+        return errors_output_all();
     }
 
     if (exit_code != SUCCESS) {
-        return errors_exit();
+        return errors_output_all();
     }
 
     /* Start the process */
     if (!process_start(&process_info)) {
-        return errors_exit();
+        return errors_output_all();
     }
 
     /* Pass streams through */
@@ -514,18 +543,18 @@ int main(int argc, char** argv)
 	for (int i = 0; i < SOCKET_COUNT; i++) {
 		if (!GetExitCodeThread(copy_threads[i], &exit_code)) {
 			system_error_push(GetLastError(), "Retrieving copy thread #%d exit code failed", i);
-			return errors_exit();
+			return errors_output_all();
 		}
 
 		if (exit_code != SUCCESS) {
-			return errors_exit();
+			return errors_output_all();
 		}
 	}
 
 	/* Get the process' exit code and use it as our own */
     if (!GetExitCodeProcess(process_info.process_info.hProcess, &exit_code)) {
         system_error_push(GetLastError(), "Retrieving process exit code failed");
-        return errors_exit();
+        return errors_output_all();
     }
 
     return exit_code;

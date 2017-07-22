@@ -9,7 +9,7 @@ typedef struct _program_arguments {
     int server_port;
     in_addr_t server_address;
     int server_address_is_in6;
-    char* process_label;
+	int token_size;
     char* exe_command_line;
     char* exe_cwd;
 } program_arguments_t;

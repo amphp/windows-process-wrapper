@@ -7,4 +7,4 @@ int errors_count();
 BOOL error_push(char* message, ...);
 BOOL system_error_push(int code, char* message, ...);
 char *error_pop();
-RESULT errors_exit();
+RESULT errors_output_all();
