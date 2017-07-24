@@ -715,12 +715,13 @@ int main(int argc, char** argv)
 		return errors_output_all();
 	}
 
-	closesocket(sockets[0]->socket);
-
 	/* Check if any stream copy threads are still active and wait for them if they are */
 	if (!wait_for_threads(copy_threads)) {
 		return errors_output_all();
 	}
+
+	/* Don't close the stdin socket until all data has been sent *and* the copy thread as ended */
+	closesocket(sockets[0]->socket);
 
 	/* Exit with the same code as the child */
     return exit_code;
