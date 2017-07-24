@@ -15,30 +15,30 @@ typedef struct _error_item {
 */
 static int vasprintf(char **strp, const char *fmt, va_list ap)
 {
-	// _vscprintf tells you how big the buffer needs to be
-	int len = _vscprintf(fmt, ap);
-	if (len == -1) {
-		return -1;
-	}
+    // _vscprintf tells you how big the buffer needs to be
+    int len = _vscprintf(fmt, ap);
+    if (len == -1) {
+        return -1;
+    }
 
-	size_t size = (size_t)len + 1;
-	char *str = (char *)malloc(size);
+    size_t size = (size_t)len + 1;
+    char *str = (char *)malloc(size);
 
-	if (!str) {
-		return -1;
-	}
+    if (!str) {
+        return -1;
+    }
 
-	// _vsprintf_s is the "secure" version of vsprintf
-	int r = vsprintf_s(str, len + 1, fmt, ap);
+    // _vsprintf_s is the "secure" version of vsprintf
+    int r = vsprintf_s(str, len + 1, fmt, ap);
 
-	if (r == -1) {
-		free(str);
-		return -1;
-	}
+    if (r == -1) {
+        free(str);
+        return -1;
+    }
 
-	*strp = str;
+    *strp = str;
 
-	return r;
+    return r;
 }
 
 BOOL errors_init()
@@ -101,10 +101,10 @@ BOOL error_push(char* format, ...)
     int length = vasprintf(&message, format, ap);
     va_end(ap);
 
-	/* trim whitespace from the end of the string */
-	for (int i = length - 1; message[i] == ' ' || message[i] == '\t' || message[i] == '\r' || message[i] == '\n'; i--) {
-		message[i] = 0;
-	}
+    /* trim whitespace from the end of the string */
+    for (int i = length - 1; message[i] == ' ' || message[i] == '\t' || message[i] == '\r' || message[i] == '\n'; i--) {
+        message[i] = 0;
+    }
 
     item->message = message;
     InterlockedPushEntrySList(errors, &item->entry);
@@ -163,7 +163,7 @@ RESULT errors_output_all()
     char *message;
 
     while (NULL != (message = error_pop())) {
-		fprintf(stderr, "%s\n", message);
+        fprintf(stderr, "%s\n", message);
     }
 
     errors_destroy();

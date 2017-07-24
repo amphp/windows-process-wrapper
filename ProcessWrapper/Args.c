@@ -22,28 +22,28 @@ typedef arg_parse_result_t (arg_parser)(program_arguments_t* program_arguments, 
 typedef arg_parse_result_t (arg_value_parser)(program_arguments_t* program_arguments, char* opt_name, char* value);
 
 typedef struct _arg_handler {
-	const char *name;
-	arg_parser *parse;
-	arg_value_parser *parse_value;
+    const char *name;
+    arg_parser *parse;
+    arg_value_parser *parse_value;
 } arg_handler_t;
 
 #define ARG_HANDLER_COUNT 4
 static arg_handler_t arg_handlers[ARG_HANDLER_COUNT] = {
-	{ .name = "address", .parse_value = parse_server_address_opt },
-	{ .name = "port", .parse_value = parse_server_port_opt },
-	{ .name = "token-size", .parse_value = parse_process_token_size_opt },
-	{ .name = "cwd", .parse_value = parse_exe_cwd_opt },
+    { .name = "address", .parse_value = parse_server_address_opt },
+    { .name = "port", .parse_value = parse_server_port_opt },
+    { .name = "token-size", .parse_value = parse_process_token_size_opt },
+    { .name = "cwd", .parse_value = parse_exe_cwd_opt },
 };
 
 static arg_handler_t *get_arg_handler(char* opt_name)
 {
-	for (int i = 0; i < ARG_HANDLER_COUNT; i++) {
-		if (strcmp(opt_name, arg_handlers[i].name) == 0) {
-			return &arg_handlers[i];
-		}
-	}
+    for (int i = 0; i < ARG_HANDLER_COUNT; i++) {
+        if (strcmp(opt_name, arg_handlers[i].name) == 0) {
+            return &arg_handlers[i];
+        }
+    }
 
-	return NULL;
+    return NULL;
 }
 
 static arg_parse_result_t parse_server_address_opt(program_arguments_t* program_arguments, char* opt_name, char* value)
@@ -102,12 +102,12 @@ static arg_parse_result_t parse_process_token_size_opt(program_arguments_t* prog
 {
     program_arguments->token_size = atoi(value);
 
-	if (program_arguments->token_size > 0) {
-		return ARG_PARSE_SUCCESS;
-	}
+    if (program_arguments->token_size > 0) {
+        return ARG_PARSE_SUCCESS;
+    }
 
-	error_push("Invalid token size: %d", program_arguments->token_size);
-	return ARG_PARSE_SUCCESS;
+    error_push("Invalid token size: %d", program_arguments->token_size);
+    return ARG_PARSE_SUCCESS;
 }
 
 static arg_parse_result_t parse_exe_cwd_opt(program_arguments_t* program_arguments, char* opt_name, char* value)
@@ -118,7 +118,7 @@ static arg_parse_result_t parse_exe_cwd_opt(program_arguments_t* program_argumen
 
 static arg_parse_result_t parse_opt(program_arguments_t* program_arguments, char* opt, char** opt_name, BOOL arg_value_only)
 {
-	arg_handler_t *handler;
+    arg_handler_t *handler;
 
     if (opt[0] == '-' && opt[1] == '-' && opt[2] == 0) {
         /* Argument is -- only */
@@ -127,8 +127,8 @@ static arg_parse_result_t parse_opt(program_arguments_t* program_arguments, char
 
     if (arg_value_only) {
         /* Previous argument was a name only and requires a value */
-		handler = get_arg_handler(*opt_name);
-		return handler->parse_value(program_arguments, *opt_name, opt);
+        handler = get_arg_handler(*opt_name);
+        return handler->parse_value(program_arguments, *opt_name, opt);
     }
 
     if (opt[0] != '-' || opt[1] != '-') {
@@ -142,35 +142,35 @@ static arg_parse_result_t parse_opt(program_arguments_t* program_arguments, char
 
     if (value == NULL) {
         /* Argument is a name only */
-		handler = get_arg_handler(*opt_name);
+        handler = get_arg_handler(*opt_name);
 
-		if (handler == NULL) {
-			error_push("Unknown option: %s", *opt_name);
-			return ARG_PARSE_ERROR;
-		}
-		
-		if (handler->parse == NULL) {
-			return ARG_PARSE_NEED_VALUE;
-		}
+        if (handler == NULL) {
+            error_push("Unknown option: %s", *opt_name);
+            return ARG_PARSE_ERROR;
+        }
+        
+        if (handler->parse == NULL) {
+            return ARG_PARSE_NEED_VALUE;
+        }
 
-    	return handler->parse(program_arguments, *opt_name);
+        return handler->parse(program_arguments, *opt_name);
     }
 
     /* Argument has a value, null out the = to split into two strings */
     value[0] = 0;
     value++;
 
-	handler = get_arg_handler(*opt_name);
+    handler = get_arg_handler(*opt_name);
 
-	if (handler == NULL) {
-		error_push("Unknown option: %s", *opt_name);
-		return ARG_PARSE_ERROR;
-	}
+    if (handler == NULL) {
+        error_push("Unknown option: %s", *opt_name);
+        return ARG_PARSE_ERROR;
+    }
 
-	if (handler->parse_value == NULL) {
-		error_push("Option %s requires a value", *opt_name);
-		return ARG_PARSE_ERROR;
-	}
+    if (handler->parse_value == NULL) {
+        error_push("Option %s requires a value", *opt_name);
+        return ARG_PARSE_ERROR;
+    }
 
     return handler->parse_value(program_arguments, *opt_name, value);
 }
