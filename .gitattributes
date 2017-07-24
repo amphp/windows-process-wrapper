@@ -1,8 +1,2 @@
 # Force CRLF or Visual Studio may throw up when processing some ancilliary files
 * eol=crlf
-
-# Explictly treat everything in /Resources as binary
-/Resources/* binary
-
-# Resource lists aren't actually binary but git seems to do weird stuff with UTF-16 LE
-*.rc binary
