@@ -94,7 +94,6 @@ BOOL error_push(char* format, ...)
     }
 
     char *message;
-
     va_list ap;
 
     va_start(ap, format);

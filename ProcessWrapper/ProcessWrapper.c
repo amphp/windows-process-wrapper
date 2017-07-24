@@ -536,8 +536,8 @@ failure:
 BOOL get_tokens_from_stdin()
 {
     DWORD bytes_read;
+    DWORD expected_size = TOKEN_SIZE * 6;
     HANDLE stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
-    size_t expected_size = TOKEN_SIZE * 6;
     char *buffer = malloc(expected_size);
 
     if (!ReadFile(stdin_handle, buffer, expected_size, &bytes_read, NULL)) {
