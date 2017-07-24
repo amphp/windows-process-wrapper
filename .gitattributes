@@ -1,3 +1,4 @@
 * eol=crlf
+*.rc binary
 /Resources/* binary
 */Resources/* binary
