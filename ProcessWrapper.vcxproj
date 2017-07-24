@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -143,17 +143,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Args.c">
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-      </DeploymentContent>
-    </ClCompile>
-    <ClCompile Include="Errors.c" />
-    <ClInclude Include="Args.h" />
-    <ClInclude Include="Errors.h" />
-    <ClInclude Include="resource.h" />
+    <ClCompile Include="src/ProcessWrapper.c" />
+    <ClCompile Include="src/Args.c" />
+    <ClCompile Include="src/Errors.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ProcessWrapper.c" />
+    <ClInclude Include="src/Args.h" />
+    <ClInclude Include="src/Errors.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ProcessWrapper.rc" />
