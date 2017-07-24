@@ -25,6 +25,35 @@ typedef struct _socket_info {
     socket_state_t state;
 } socket_info_t;
 
+#define HANDSHAKE_STATUS_OPTION_COUNT 7
+
+enum handshake_status {
+	HANDSHAKE_STATUS_SUCCESS,
+	HANDSHAKE_STATUS_SIGNAL_UNEXPECTED,
+	HANDSHAKE_STATUS_INVALID_STREAM_ID,
+	HANDSHAKE_STATUS_INVALID_PROCESS_ID,
+	HANDSHAKE_STATUS_DUPLICATE_STREAM_ID,
+	HANDSHAKE_STATUS_INVALID_CLIENT_TOKEN,
+	HANDSHAKE_STATUS_INVALID_SERVER_TOKEN,
+};
+
+char* handshake_status_messages[HANDSHAKE_STATUS_OPTION_COUNT] = {
+	"Success",
+	"Signal not expected at this time",
+	"Invalid stream identifier",
+	"Invalid process identifier",
+	"Duplicate stream identifier",
+	"Invalid client security token",
+	"Invalid server security token",
+};
+
+typedef enum _signal_code {
+	SIGNAL_CODE_HANDSHAKE = 0x01,
+	SIGNAL_CODE_HANDSHAKE_ACK = 0x02,
+	SIGNAL_CODE_CHILD_PID = 0x03,
+	SIGNAL_CODE_EXIT_CODE = 0x04,
+} signal_code_t;
+
 typedef struct _pipe {
     HANDLE read;
     HANDLE write;
@@ -43,14 +72,17 @@ typedef struct _file_socket_pair {
     SOCKET socket;
 } file_socket_pair_t;
 
-WSADATA wsa_data;
-
 static struct {
 	program_arguments_t arguments;
 	WSABUF client_tokens;
 	WSABUF server_tokens;
 } globals;
 
+WSADATA wsa_data;
+
+/*
+ * Encode a DWORD to a char buffer in network byte order
+ */
 static void dword_to_buffer(DWORD value, char* buffer)
 {
 	buffer[0] = value >> 24 & 0xFF;
@@ -108,11 +140,42 @@ static BOOL socket_connect(socket_info_t* socket_info)
 }
 
 /*
+ * Send data to a socket
+ *
+ * This function returns TRUE only if all the data in the supplied buffers was successfully sent in a single operation. In practice this should be
+ * a safe assumption, since the sockets are in blocking mode while passing through child process data, and all other data exchange is done in very
+ * small chunks.
+ */
+static BOOL socket_send(SOCKET socket, int id, WSABUF *buffers, DWORD buffer_count, const char *description)
+{
+	ULONG length = 0;
+	DWORD bytes_written;
+
+	/* Assume that the socket is writable without blocking, at this point the internal buffer must be empty */
+	int result = WSASend(socket, buffers, buffer_count, &bytes_written, 0, NULL, NULL);
+
+	if (result == SOCKET_ERROR) {
+		system_error_push(WSAGetLastError(), "Failed to send %s to socket #%d", description, id);
+		return FALSE;
+	}
+
+	for (DWORD i = 0; i < buffer_count; i++) {
+		length += buffers[i].len;
+	}
+
+	if (bytes_written != length) {
+		error_push("Failed to send %s to socket #%d: sent %d of %d bytes", description, id, bytes_written, length);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+/*
  * Process writability on a socket which is connecting
  */
 static BOOL socket_process_connect_writable(socket_info_t* socket_info)
 {
-    DWORD bytes_written;
     u_long non_blocking = 0;
 
     int result = ioctlsocket(socket_info->socket, FIONBIO, &non_blocking);
@@ -122,28 +185,21 @@ static BOOL socket_process_connect_writable(socket_info_t* socket_info)
         return FALSE;
     }
 
-	char socket_id[5];
-	WSABUF socket_id_buffer = { .len = 5,.buf = socket_id };
+	char socket_id[6];
+	WSABUF socket_id_buffer = { .len = 6,.buf = socket_id };
 	WSABUF token_buffer = { .len = TOKEN_SIZE, .buf = CLIENT_TOKEN(socket_info->id) };
 	WSABUF buffers[2];
 
-	dword_to_buffer(GetCurrentProcessId(), socket_id);
-	socket_id[4] = socket_info->id;
+	socket_id[0] = SIGNAL_CODE_HANDSHAKE;
+	dword_to_buffer(GetCurrentProcessId(), socket_id + 1);
+	socket_id[5] = socket_info->id;
 
 	buffers[0] = socket_id_buffer;
 	buffers[1] = token_buffer;
 
-    result = WSASend(socket_info->socket, buffers, 2, &bytes_written, 0, NULL, NULL);
-
-    if (result == SOCKET_ERROR) {
-        system_error_push(WSAGetLastError(), "Failed to send handshake to socket #%d", socket_info->id);
-        return FALSE;
-    }
-
-    if (bytes_written != TOKEN_SIZE + 5) {
-        error_push("Failed to send handshake to socket #%d: sent %d of %d bytes", socket_info->id, bytes_written, TOKEN_SIZE + 5);
-        return FALSE;
-    }
+	if (!socket_send(socket_info->socket, socket_info->id, buffers, 2, "handshake")) {
+		return FALSE;
+	}
 
     socket_info->state = SOCKET_STATE_WAIT_ACK;
 
@@ -158,7 +214,7 @@ static BOOL socket_process_connect_readable(socket_info_t* socket_info)
     WSABUF buffer;
     DWORD bytes_read, flags = 0;
 
-	buffer.len = TOKEN_SIZE + 1;
+	buffer.len = TOKEN_SIZE + 2;
 	buffer.buf = malloc(buffer.len);
 
     int result = WSARecv(socket_info->socket, &buffer, 1, &bytes_read, &flags, NULL, NULL);
@@ -169,29 +225,50 @@ static BOOL socket_process_connect_readable(socket_info_t* socket_info)
         return FALSE;
     }
 
-	if (bytes_read == 1 && buffer.buf[0] != SUCCESS) {
-		error_push("Handshake failed for socket #%d: Server rejected connection with code %d", socket_info->id, buffer.buf[0]);
+	if (bytes_read < 2) {
+		error_push("Failed to read handshake data from socket #%d: recieved %d of expected %d bytes", socket_info->id, bytes_read, buffer.len);
 		free(buffer.buf);
 		return FALSE;
 	}
 
-    if (bytes_read != buffer.len) {
-        error_push("Failed to read handshake data from socket #%d: recieved %d of expected %d bytes", socket_info->id, bytes_read, buffer.len);
-        free(buffer.buf);
-        return FALSE;
-    }
-
-	result = memcmp(buffer.buf + 1, SERVER_TOKEN(socket_info->id), TOKEN_SIZE);
-	free(buffer.buf);
-
-	if (result != 0) {
-		error_push("Handshake failed for socket #%d: Invalid server token", socket_info->id);
+	if (buffer.buf[0] != SIGNAL_CODE_HANDSHAKE_ACK) {
+		error_push("Handshake failed for socket #%d: Unexpected signal code %d from server, expecting HANDSHAKE_ACK", socket_info->id, buffer.buf[0]);
+		free(buffer.buf);
 		return FALSE;
 	}
 
-    socket_info->state = SOCKET_STATE_CONNECTED;
+	if (buffer.buf[1] != HANDSHAKE_STATUS_SUCCESS) {
+		error_push(
+			"Handshake failed for socket #%d: Server rejected connection: %d: %s", 
+			socket_info->id, buffer.buf[1], 
+			buffer.buf[1] < HANDSHAKE_STATUS_OPTION_COUNT ? handshake_status_messages[buffer.buf[1]] : "Unknown error"
+		);
+		free(buffer.buf);
+		return FALSE;
+	}
 
-    return TRUE;
+	/* If we get this far then we need to ACK the server's message */
+	char ack_message[2] = { SIGNAL_CODE_HANDSHAKE_ACK, HANDSHAKE_STATUS_INVALID_SERVER_TOKEN };
+	WSABUF ack_buffer = { .len = 2, .buf = ack_message };
+	BOOL success = FALSE;
+
+	if (bytes_read != buffer.len) {
+        error_push("Failed to read handshake data from socket #%d: recieved %d of expected %d bytes", socket_info->id, bytes_read, buffer.len);
+    } else if (memcmp(buffer.buf + 2, SERVER_TOKEN(socket_info->id), TOKEN_SIZE) != 0) {
+		error_push("Handshake failed for socket #%d: Invalid server token", socket_info->id);
+	} else {
+		ack_message[1] = HANDSHAKE_STATUS_SUCCESS;
+		socket_info->state = SOCKET_STATE_CONNECTED;
+		success = TRUE;
+	}
+
+	free(buffer.buf);
+
+	if (!socket_send(socket_info->socket, socket_info->id, &ack_buffer, 1, "handshake ack")) {
+		return FALSE;
+	}
+
+    return success;
 }
 
 /*
@@ -205,7 +282,7 @@ static void socket_process_connect_error(socket_info_t* socket_info)
     int result = getsockopt(socket_info->socket, SOL_SOCKET, SO_ERROR, (char*)&code, &len);
 
     if (result == SOCKET_ERROR) {
-        error_push("Failed to connect socket #%d: Unkown error", socket_info->id);
+        error_push("Failed to connect socket #%d: Unknown error", socket_info->id);
     } else {
         system_error_push(code, "Failed to connect socket #%d", socket_info->id);
     }
@@ -214,7 +291,7 @@ static void socket_process_connect_error(socket_info_t* socket_info)
 /*
  * Determines whether any sockets have pending connect actions
  */
-static BOOL socket_set_have_pending_connect(socket_info_t **sockets)
+static BOOL socketset_have_pending_connect(socket_info_t **sockets)
 {
     for (int i = 0; i < SOCKET_COUNT; i++) {
         if (sockets[i]->state < SOCKET_STATE_CONNECTED) {
@@ -228,11 +305,11 @@ static BOOL socket_set_have_pending_connect(socket_info_t **sockets)
 /*
  * Initialize the sockets array
  */
-static BOOL socket_set_create(socket_info_t** sockets)
+static BOOL socketset_create(socket_info_t** sockets, int count)
 {
     int address_family = globals.arguments.server_address_is_in6 ? AF_INET6 : AF_INET;
 
-    for (int i = 0; i < SOCKET_COUNT; i++) {
+    for (int i = 0; i < count; i++) {
         socket_info_t* socket_info = malloc(sizeof(socket_info_t));
 
         socket_info->id = i;
@@ -253,7 +330,7 @@ static BOOL socket_set_create(socket_info_t** sockets)
 /*
  * Thread main routine to connect sockets
  */
-static DWORD WINAPI socket_set_connect(LPVOID param)
+static DWORD WINAPI socketset_connect(LPVOID param)
 {
     socket_info_t **sockets = (socket_info_t**)param;
     FD_SET read_set;
@@ -266,7 +343,7 @@ static DWORD WINAPI socket_set_connect(LPVOID param)
         }
     }
 
-    while (socket_set_have_pending_connect(sockets)) {
+    while (socketset_have_pending_connect(sockets)) {
         FD_ZERO(&read_set);
         FD_ZERO(&write_set);
         FD_ZERO(&error_set);
@@ -372,7 +449,7 @@ static BOOL process_start(process_info_t *process_info)
 
 static DWORD WINAPI copy_output_to_socket(LPVOID param)
 {
-	DWORD bytes_read, bytes_written, flags = 0;
+	DWORD bytes_read;
 	WSABUF buffer;
 	int result = FAILURE;
 	file_socket_pair_t *pair = (file_socket_pair_t*)param;
@@ -400,13 +477,7 @@ static DWORD WINAPI copy_output_to_socket(LPVOID param)
 
 		buffer.len = bytes_read;
 
-		if (WSASend(pair->socket, &buffer, 1, &bytes_written, flags, NULL, NULL) == SOCKET_ERROR) {
-			system_error_push(WSAGetLastError(), "Failed to send data to socket #%d", pair->id);
-			goto failure;
-		}
-
-		if (bytes_written != bytes_read) {
-			error_push("Failed to send data to socket #%d: sent %d of %d bytes", pair->id, bytes_written, bytes_read);
+		if (!socket_send(pair->socket, pair->id, &buffer, 1, "data")) {
 			goto failure;
 		}
     }
@@ -488,25 +559,14 @@ BOOL get_tokens_from_stdin()
 	return TRUE;
 }
 
-static BOOL send_dword_to_parent(socket_info_t *socket, DWORD code)
+static BOOL send_dword_to_parent(socket_info_t *socket, signal_code_t signal_code, DWORD data, const char *description)
 {
-	DWORD bytes_written, flags = 0;
-	char bytes[4];
-	WSABUF buffer = { .len = 4, .buf = bytes };
+	char bytes[5] = { signal_code };
+	WSABUF buffer = { .len = 5, .buf = bytes };
 
-	dword_to_buffer(code, bytes);
+	dword_to_buffer(data, bytes + 1);
 
-	if (WSASend(socket->socket, &buffer, 1, &bytes_written, flags, NULL, NULL) == SOCKET_ERROR) {
-		system_error_push(WSAGetLastError(), "Failed to send data to socket #%d", socket->id);
-		return FALSE;
-	}
-
-	if (bytes_written != buffer.len) {
-		error_push("Failed to send data to socket #%d: sent %d of %d bytes", socket->id, bytes_written, buffer.len);
-		return FALSE;
-	}
-
-	return TRUE;
+	return socket_send(socket->socket, socket->id, &buffer, 1, description);
 }
 
 static BOOL wait_for_threads(HANDLE *copy_threads)
@@ -577,11 +637,11 @@ int main(int argc, char** argv)
 	}
 
     /* Connect to server */
-    if (!socket_set_create(sockets)) {
+    if (!socketset_create(sockets, SOCKET_COUNT)) {
         return errors_output_all();
     }
 
-    HANDLE connect_thread = CreateThread(NULL, 0, socket_set_connect, &sockets, 0, NULL);
+    HANDLE connect_thread = CreateThread(NULL, 0, socketset_connect, &sockets, 0, NULL);
 
     /* Initialize the data for the child process */
     process_info_t process_info;
@@ -611,7 +671,13 @@ int main(int argc, char** argv)
         return errors_output_all();
     }
 
-    /* Start stream copy threads */
+	/* Send the process id to the parent on the stdin socket - despite the fact that another
+	* thread might be doing stuff with this socket it is safe because it will only be reading */
+	if (!send_dword_to_parent(sockets[0], SIGNAL_CODE_CHILD_PID, process_info.process_info.dwProcessId, "PID")) {
+		return errors_output_all();
+	}
+	
+	/* Start stream copy threads */
     HANDLE copy_threads[SOCKET_COUNT];
 
     file_socket_pair_t stdin_pair;
@@ -644,9 +710,8 @@ int main(int argc, char** argv)
 		return errors_output_all();
 	}
 
-	/* Send the process exit code to the parent on the stdin socket. Despite the fact that another
-	 * thread might be doing stuff with this socket it is safe because it will only be reading */
-	if (!send_dword_to_parent(sockets[0], exit_code)) {
+	/* Send the process exit code to the parent on the stdin socket */
+	if (!send_dword_to_parent(sockets[0], SIGNAL_CODE_EXIT_CODE, exit_code, "exit code")) {
 		return errors_output_all();
 	}
 

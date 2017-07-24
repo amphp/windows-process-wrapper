@@ -13,7 +13,7 @@ typedef struct _error_item {
 * Polyfill for vasprintf()
 * See https://stackoverflow.com/a/40160038/889949
 */
-int vasprintf(char **strp, const char *fmt, va_list ap)
+static int vasprintf(char **strp, const char *fmt, va_list ap)
 {
 	// _vscprintf tells you how big the buffer needs to be
 	int len = _vscprintf(fmt, ap);

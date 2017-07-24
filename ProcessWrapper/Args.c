@@ -202,13 +202,13 @@ static BOOL validate_program_arguments(program_arguments_t* program_arguments)
 
 static char *build_command_line_string(char** args, int start, int count)
 {
-    size_t len = count - 1;
+    size_t len = 0;
 
     for (int i = start, l = start + count; i < l; i++) {
         len += strlen(args[i]) + 2;
     }
 
-    char *result = malloc(len);
+    char *result = malloc(len + count);
     char *dest = result;
 
     for (int i = start, l = start + count; i < l; i++) {
