@@ -76,6 +76,7 @@ static struct {
     program_arguments_t arguments;
     WSABUF client_tokens;
     WSABUF server_tokens;
+    LPSTR exe_command_line;
 } globals;
 
 WSADATA wsa_data;
@@ -423,7 +424,7 @@ static BOOL process_start(process_info_t *process_info)
 {
     BOOL result = CreateProcess(
         NULL,
-        globals.arguments.exe_command_line,
+        globals.exe_command_line,
         &process_info->security_attributes, // process security attributes 
         &process_info->security_attributes, // primary thread security attributes 
         TRUE, // handles are inherited 
@@ -536,25 +537,61 @@ failure:
 BOOL get_tokens_from_stdin()
 {
     DWORD bytes_read;
-    DWORD expected_size = TOKEN_SIZE * 6;
+    DWORD expected_token_size = TOKEN_SIZE * 6;
+    ULONG peer_tokens_len = TOKEN_SIZE * 3;
     HANDLE stdin_handle = GetStdHandle(STD_INPUT_HANDLE);
-    char *buffer = malloc(expected_size);
+    char buffer[65536]; /* https://stackoverflow.com/a/28452546 */
 
-    if (!ReadFile(stdin_handle, buffer, expected_size, &bytes_read, NULL)) {
+    if (!ReadFile(stdin_handle, buffer, expected_token_size, &bytes_read, NULL)) {
         system_error_push(GetLastError(), "Failed to read tokens from stdin");
         return FALSE;
     }
 
-    if (bytes_read != expected_size) {
-        error_push("Failed to read tokens from stdin: recieved %d of expected %d bytes", bytes_read, expected_size);
+    if (bytes_read != expected_token_size) {
+        error_push("Failed to read tokens from stdin: recieved %d of expected %d bytes", bytes_read, expected_token_size);
         return FALSE;
     }
 
-    globals.client_tokens.len = TOKEN_SIZE * 3;
-    globals.client_tokens.buf = buffer;
+    globals.client_tokens.len = peer_tokens_len;
+    globals.client_tokens.buf = malloc(peer_tokens_len);
+    memcpy(globals.client_tokens.buf, buffer, peer_tokens_len);
 
-    globals.server_tokens.len = TOKEN_SIZE * 3;
-    globals.server_tokens.buf = buffer + (TOKEN_SIZE * 3);
+    globals.server_tokens.len = peer_tokens_len;
+    globals.server_tokens.buf = malloc(peer_tokens_len);
+    memcpy(globals.server_tokens.buf, buffer + peer_tokens_len, peer_tokens_len);
+
+    if (!ReadFile(stdin_handle, buffer, 1, &bytes_read, NULL)) {
+        system_error_push(GetLastError(), "Failed to read token-command separator from stdin");
+        return FALSE;
+    }
+
+    if (bytes_read != 1) {
+        error_push("Failed to read token-command separator from stdin: recieved %d of expected 1 byte", bytes_read);
+        return FALSE;
+    }
+
+    if (buffer[0] != 0) {
+        error_push("Failed to read token-command separator from stdin: expected 0, got %d", buffer[0]);
+        return FALSE;
+    }
+
+    if (!ReadFile(stdin_handle, buffer, 65536, &bytes_read, NULL)) {
+        system_error_push(GetLastError(), "Failed to read command from stdin");
+        return FALSE;
+    }
+
+    if (bytes_read == 65536) {
+        error_push("Failed to read command from stdin: command too long");
+        return FALSE;
+    }
+
+    if (buffer[bytes_read] != 0) {
+        error_push("Failed to read command from stdin: missing null terminator");
+        return FALSE;
+    }
+
+    globals.exe_command_line = malloc(bytes_read);
+    memcpy(globals.exe_command_line, buffer, bytes_read);
 
     return TRUE;
 }
