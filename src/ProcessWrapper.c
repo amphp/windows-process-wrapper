@@ -585,7 +585,7 @@ BOOL get_tokens_from_stdin()
         return FALSE;
     }
 
-    if (buffer[bytes_read] != 0) {
+    if (buffer[bytes_read - 1] != 0) {
         error_push("Failed to read command from stdin: missing null terminator");
         return FALSE;
     }
