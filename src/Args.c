@@ -181,7 +181,6 @@ static void init_program_arguments(program_arguments_t* program_arguments)
     memset(&program_arguments->server_address, 0, sizeof(in_addr_t));
     program_arguments->server_address_is_in6 = -1;
     program_arguments->token_size = 0;
-    program_arguments->exe_command_line = NULL;
     program_arguments->exe_cwd = NULL;
 }
 
@@ -233,7 +232,6 @@ static char *build_command_line_string(char** args, int start, int count)
 BOOL parse_opts(program_arguments_t* program_arguments, int argc, char** argv)
 {
     BOOL arg_value_only = FALSE;
-    int exe_path_arg_index = 0;
     char *opt_name;
 
     init_program_arguments(program_arguments);
@@ -244,11 +242,7 @@ BOOL parse_opts(program_arguments_t* program_arguments, int argc, char** argv)
             return FALSE;
 
         case ARG_PARSE_LAST_USE_CURRENT:
-            exe_path_arg_index = i;
-            goto end_parse_opts;
-
         case ARG_PARSE_LAST_USE_NEXT:
-            exe_path_arg_index = i + 1;
             goto end_parse_opts;
 
         case ARG_PARSE_NEED_VALUE:
@@ -262,13 +256,6 @@ BOOL parse_opts(program_arguments_t* program_arguments, int argc, char** argv)
     }
 
 end_parse_opts:
-    if (exe_path_arg_index == 0 || exe_path_arg_index >= argc) {
-        error_push("No executable specified");
-        return FALSE;
-    }
-
-    program_arguments->exe_command_line = build_command_line_string(argv, exe_path_arg_index, argc - exe_path_arg_index);
-
     if (program_arguments->server_address_is_in6 == -1) {
         parse_server_address_opt(program_arguments, "address", "127.0.0.1");
     }
