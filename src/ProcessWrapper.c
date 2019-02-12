@@ -63,7 +63,7 @@ typedef struct _process_info {
     pipe_t pipes[3];
     PROCESS_INFORMATION process_info;
     SECURITY_ATTRIBUTES security_attributes;
-    STARTUPINFO start_info;
+    STARTUPINFOW start_info;
 } process_info_t;
 
 typedef struct _file_socket_pair {
@@ -76,7 +76,7 @@ static struct {
     program_arguments_t arguments;
     WSABUF client_tokens;
     WSABUF server_tokens;
-    LPSTR exe_command_line;
+    LPWSTR exe_command_line;
 } globals;
 
 WSADATA wsa_data;
@@ -422,7 +422,7 @@ static BOOL process_init(process_info_t *process_info)
 
 static BOOL process_start(process_info_t *process_info)
 {
-    BOOL result = CreateProcess(
+    BOOL result = CreateProcessW(
         NULL,
         globals.exe_command_line,
         &process_info->security_attributes, // process security attributes 
@@ -590,8 +590,9 @@ BOOL get_tokens_from_stdin()
         return FALSE;
     }
 
-    globals.exe_command_line = malloc(bytes_read);
-    memcpy(globals.exe_command_line, buffer, bytes_read);
+	int wlen = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, 0, 0);
+	globals.exe_command_line = malloc(wlen * 2);
+	MultiByteToWideChar(CP_UTF8, 0, buffer, -1, globals.exe_command_line, wlen);
 
     return TRUE;
 }

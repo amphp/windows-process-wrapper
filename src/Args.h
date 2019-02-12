@@ -10,7 +10,7 @@ typedef struct _program_arguments {
     in_addr_t server_address;
     int server_address_is_in6;
     int token_size;
-    char* exe_cwd;
+    WCHAR* exe_cwd;
 } program_arguments_t;
 
 int parse_opts(program_arguments_t* program_arguments, int argc, char** argv);
