@@ -49,7 +49,7 @@ static arg_handler_t *get_arg_handler(LPCWSTR const opt_name)
 static arg_parse_result_t parse_server_address_opt(program_arguments_t* program_arguments, LPCWSTR const opt_name, LPCWSTR const value)
 {
     void *buf = malloc(sizeof(IN_ADDR));
-	
+    
     switch (InetPtonW(AF_INET, value, buf)) {
         case 0: /* Value is not a valid IPv4 address, try IPv6 */
             break;
@@ -88,25 +88,25 @@ static arg_parse_result_t parse_server_address_opt(program_arguments_t* program_
 
 static BOOL parse_int(LPCWSTR const str, int* result)
 {
-	LPWSTR end = NULL;
+    LPWSTR end = NULL;
 
-	errno = 0;
-	const long number = wcstol(str, &end, 10);
+    errno = 0;
+    const long number = wcstol(str, &end, 10);
 
     if (end == str || errno != 0) {
-	    return FALSE;
+        return FALSE;
     }
 
-	*result = (int)number;
-	return TRUE;
+    *result = (int)number;
+    return TRUE;
 }
 
 static arg_parse_result_t parse_server_port_opt(program_arguments_t* program_arguments, LPCWSTR const opt_name, LPCWSTR const value)
 {
-	if (parse_int(value, &program_arguments->server_port)
-		&& program_arguments->server_port > 0 && program_arguments->server_port < 65536) {
+    if (parse_int(value, &program_arguments->server_port)
+        && program_arguments->server_port > 0 && program_arguments->server_port < 65536) {
         return ARG_PARSE_SUCCESS;
-	}
+    }
 
     error_push(L"Invalid server port: %d", program_arguments->server_port);
     return ARG_PARSE_ERROR;

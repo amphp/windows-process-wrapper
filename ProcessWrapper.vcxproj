@@ -153,6 +153,7 @@
     <ClInclude Include="src\Args.h" />
     <ClInclude Include="src\Errors.h" />
     <ClInclude Include="resources\resource.h" />
+    <ClInclude Include="src\Encoding.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resources\ProcessWrapper.rc" />

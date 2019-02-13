@@ -1,12 +1,13 @@
-#include <windows.h>
+#include <Windows.h>
 #include <stdio.h>
 #include "Errors.h"
+#include "Encoding.h"
 
 static PSLIST_HEADER errors;
 
 typedef struct _error_item {
     SLIST_ENTRY entry;
-    LPWSTR message;
+    LPCWSTR message;
 } error_item_t;
 
 /*
@@ -22,7 +23,7 @@ static int vaswprintf(LPWSTR *strp, LPCWSTR const fmt, va_list ap)
     }
 
     const size_t size = (size_t)len + 1;
-    LPWSTR str = (LPWSTR)malloc(size * sizeof(WCHAR));
+    LPWSTR str = malloc(size * sizeof(WCHAR));
 
     if (!str) {
         return -1;
@@ -136,7 +137,7 @@ BOOL system_error_push(const int code, LPCWSTR const format, ...)
     return error_push(L"%s: %d: %s", extra, code, errstr);
 }
 
-LPWSTR error_pop()
+static LPWSTR error_pop()
 {
     if (errors == NULL) {
         return NULL;
@@ -148,24 +149,51 @@ LPWSTR error_pop()
         return NULL;
     }
 
-    LPWSTR message = item->message;
+    LPCWSTR const message = item->message;
     _aligned_free(item);
 
-    return message;
+    return (LPWSTR)message;
 }
 
 /*
  * Output error messages to stderr and return -1
  */
-RESULT errors_output_all()
+void errors_output_all()
 {
     LPWSTR message;
+    int buflen = 128;
+    char *buffer = malloc(buflen);
 
     while (NULL != (message = error_pop())) {
-        fwprintf(stderr, L"%s\n", message);
+        int result = WSTR_TO_UTF8(message, buffer, buflen);
+
+        if (result == 0) {
+            if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+                continue;
+            }
+
+            result = WSTR_MEASURE_UTF8(message);
+            if (result == 0) {
+                continue;
+            }
+
+            char *tmp = realloc(buffer, result);
+            if (tmp == NULL) {
+                continue;
+            }
+
+            buffer = tmp;
+            buflen = result;
+
+            result = WSTR_TO_UTF8(message, buffer, buflen);
+            if (result == 0) {
+                continue;
+            }
+        }
+
+        fprintf(stderr, "%s\n", buffer);
     }
 
     errors_destroy();
-
-    return FAILURE;
+    free(buffer);
 }

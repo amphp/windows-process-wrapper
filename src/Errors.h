@@ -10,5 +10,4 @@ BOOL errors_destroy();
 int errors_count();
 BOOL error_push(LPCWSTR const format, ...);
 BOOL system_error_push(const int code, LPCWSTR const format, ...);
-LPWSTR error_pop();
-RESULT errors_output_all();
+void errors_output_all();

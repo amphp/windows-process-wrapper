@@ -2,6 +2,7 @@
 #include <WS2tcpip.h>
 #include "Errors.h"
 #include "Args.h"
+#include "Encoding.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -308,7 +309,7 @@ static BOOL socketset_have_pending_connect(socket_info_t **sockets)
  */
 static BOOL socketset_create(socket_info_t** sockets, int count)
 {
-	const int address_family = globals.arguments.server_address_is_in6 ? AF_INET6 : AF_INET;
+    const int address_family = globals.arguments.server_address_is_in6 ? AF_INET6 : AF_INET;
 
     for (int i = 0; i < count; i++) {
         socket_info_t* socket_info = malloc(sizeof(socket_info_t));
@@ -422,7 +423,7 @@ static BOOL process_init(process_info_t *process_info)
 
 static BOOL process_start(process_info_t *process_info)
 {
-	const BOOL result = CreateProcessW(
+    const BOOL result = CreateProcessW(
         NULL,
         globals.exe_command_line,
         &process_info->security_attributes, // process security attributes 
@@ -460,7 +461,7 @@ static DWORD WINAPI copy_output_to_socket(LPVOID param)
 
     while (TRUE) {
         if (!ReadFile(pair->file, buffer.buf, BUFFER_SIZE, &bytes_read, NULL)) {
-	        const int error = GetLastError();
+            const int error = GetLastError();
 
             /* The child process ended (may also succeed with zero bytes depending on the order in which things happen) */
             if (error == ERROR_BROKEN_PIPE) {
@@ -590,15 +591,19 @@ BOOL get_tokens_from_stdin()
         return FALSE;
     }
 
-    const int len = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, NULL, 0);
+    const int len = UTF8_MEASURE_WSTR(buffer);
 
-	if (len == 0) {
+    if (len == 0) {
         error_push(L"Failed to read command from stdin: invalid UTF-8 string");
         return FALSE;
-	}
+    }
 
-	globals.exe_command_line = malloc(len * sizeof(WCHAR));
-	MultiByteToWideChar(CP_UTF8, 0, buffer, -1, globals.exe_command_line, len);
+    globals.exe_command_line = malloc(len * sizeof(WCHAR));
+
+    if (UTF8_TO_WSTR(buffer, globals.exe_command_line, len) == 0) {
+        error_push(L"Failed to read command from stdin: failed to decode UTF-8 string");
+        return FALSE;
+    }
 
     return TRUE;
 }
@@ -672,17 +677,20 @@ int wmain(const int argc, LPCWSTR* argv)
 
     /* Parse args */
     if (!parse_opts(&globals.arguments, argc, argv)) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Get process identifier token from stdin */
     if (!get_tokens_from_stdin()) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Connect to server */
     if (!socketset_create(sockets, SOCKET_COUNT)) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     HANDLE connect_thread = CreateThread(NULL, 0, socketset_connect, &sockets, 0, NULL);
@@ -692,33 +700,39 @@ int wmain(const int argc, LPCWSTR* argv)
     ZeroMemory(&process_info, sizeof(process_info_t));
 
     if (!process_init(&process_info)) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Wait until server is connected */
     if (WaitForSingleObject(connect_thread, INFINITE) == WAIT_FAILED) {
         system_error_push(GetLastError(), L"Wait operation on connect thread failed");
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
         
     if (!GetExitCodeThread(connect_thread, &exit_code)) {
         system_error_push(GetLastError(), L"Retrieving connect thread exit code failed");
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     if (exit_code != SUCCESS) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Start the process */
     if (!process_start(&process_info)) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Send the process id to the parent on the stdin socket - despite the fact that another
     * thread might be doing stuff with this socket it is safe because it will only be reading */
     if (!send_dword_to_parent(sockets[0], SIGNAL_CODE_CHILD_PID, process_info.process_info.dwProcessId, L"PID")) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
     
     /* Start stream copy threads */
@@ -745,23 +759,27 @@ int wmain(const int argc, LPCWSTR* argv)
     /* Wait until the child process ends */
     if (WaitForSingleObject(process_info.process_info.hProcess, INFINITE) == WAIT_FAILED) {
         system_error_push(GetLastError(), L"Wait operation on child process failed");
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Get the process' exit code */
     if (!GetExitCodeProcess(process_info.process_info.hProcess, &exit_code)) {
         system_error_push(GetLastError(), L"Retrieving process exit code failed");
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Send the process exit code to the parent on the stdin socket */
     if (!send_dword_to_parent(sockets[0], SIGNAL_CODE_EXIT_CODE, exit_code, L"exit code")) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Check if any stream copy threads are still active and wait for them if they are */
     if (!wait_for_threads(copy_threads)) {
-        return errors_output_all();
+        errors_output_all();
+        return FAILURE;
     }
 
     /* Don't close the stdin socket until all data has been sent *and* the copy thread as ended */
