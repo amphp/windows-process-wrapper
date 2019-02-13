@@ -49,7 +49,7 @@ static arg_handler_t *get_arg_handler(LPCWSTR const opt_name)
 static arg_parse_result_t parse_server_address_opt(program_arguments_t* program_arguments, LPCWSTR const opt_name, LPCWSTR const value)
 {
     void *buf = malloc(sizeof(IN_ADDR));
-    
+
     switch (InetPtonW(AF_INET, value, buf)) {
         case 0: /* Value is not a valid IPv4 address, try IPv6 */
             break;
