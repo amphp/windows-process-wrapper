@@ -46,6 +46,21 @@ static arg_handler_t *get_arg_handler(LPCWSTR const opt_name)
     return NULL;
 }
 
+static BOOL parse_int(LPCWSTR const str, int* result)
+{
+    LPWSTR end = NULL;
+
+    errno = 0;
+    const long number = wcstol(str, &end, 10);
+
+    if (end == str || errno != 0) {
+        return FALSE;
+    }
+
+    *result = (int)number;
+    return TRUE;
+}
+
 static arg_parse_result_t parse_server_address_opt(program_arguments_t* program_arguments, LPCWSTR const opt_name, LPCWSTR const value)
 {
     void *buf = malloc(sizeof(IN_ADDR));
@@ -84,21 +99,6 @@ static arg_parse_result_t parse_server_address_opt(program_arguments_t* program_
             free(buf);
             return ARG_PARSE_ERROR;
     }
-}
-
-static BOOL parse_int(LPCWSTR const str, int* result)
-{
-    LPWSTR end = NULL;
-
-    errno = 0;
-    const long number = wcstol(str, &end, 10);
-
-    if (end == str || errno != 0) {
-        return FALSE;
-    }
-
-    *result = (int)number;
-    return TRUE;
 }
 
 static arg_parse_result_t parse_server_port_opt(program_arguments_t* program_arguments, LPCWSTR const opt_name, LPCWSTR const value)
