@@ -6,30 +6,30 @@ static PSLIST_HEADER errors;
 
 typedef struct _error_item {
     SLIST_ENTRY entry;
-    char* message;
+    LPWSTR message;
 } error_item_t;
 
 /*
-* Polyfill for vasprintf()
+* Polyfill for vaswprintf()
 * See https://stackoverflow.com/a/40160038/889949
 */
-static int vasprintf(char **strp, const char *fmt, va_list ap)
+static int vaswprintf(LPWSTR *strp, LPCWSTR const fmt, va_list ap)
 {
-    // _vscprintf tells you how big the buffer needs to be
-    int len = _vscprintf(fmt, ap);
+    // _vscwprintf tells you how big the buffer needs to be
+    const int len = _vscwprintf(fmt, ap);
     if (len == -1) {
         return -1;
     }
 
-    size_t size = (size_t)len + 1;
-    char *str = (char *)malloc(size);
+    const size_t size = (size_t)len + 1;
+    LPWSTR str = (LPWSTR)malloc(size * sizeof(WCHAR));
 
     if (!str) {
         return -1;
     }
 
-    // _vsprintf_s is the "secure" version of vsprintf
-    int r = vsprintf_s(str, len + 1, fmt, ap);
+    // _vswprintf_s is the "secure" version of vswprintf
+    const int r = vswprintf_s(str, len + 1, fmt, ap);
 
     if (r == -1) {
         free(str);
@@ -81,7 +81,7 @@ int errors_count()
     return QueryDepthSList(errors);
 }
 
-BOOL error_push(char* format, ...)
+BOOL error_push(LPCWSTR const format, ...)
 {
     if (errors == NULL) {
         return FALSE;
@@ -93,15 +93,15 @@ BOOL error_push(char* format, ...)
         return FALSE;
     }
 
-    char *message;
+    LPWSTR message;
     va_list ap;
 
     va_start(ap, format);
-    int length = vasprintf(&message, format, ap);
+    const int length = vaswprintf(&message, format, ap);
     va_end(ap);
 
     /* trim whitespace from the end of the string */
-    for (int i = length - 1; message[i] == ' ' || message[i] == '\t' || message[i] == '\r' || message[i] == '\n'; i--) {
+    for (int i = length - 1; message[i] == L' ' || message[i] == L'\t' || message[i] == L'\r' || message[i] == L'\n'; i--) {
         message[i] = 0;
     }
 
@@ -111,32 +111,32 @@ BOOL error_push(char* format, ...)
     return TRUE;
 }
 
-BOOL system_error_push(int code, char* message, ...)
+BOOL system_error_push(const int code, LPCWSTR const format, ...)
 {
-    char *errstr = NULL;
+    LPWSTR errstr = NULL;
 
-    FormatMessage(
+    FormatMessageW(
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         NULL, code,
         MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPSTR)&errstr, 0, NULL
-        );
+        (LPWSTR)&errstr, 0, NULL
+    );
 
-    if (message == NULL) {
-        return error_push("%d: %s", code, errstr);
+    if (format == NULL) {
+        return error_push(L"%d: %s", code, errstr);
     }
 
     va_list ap;
-    char *extra;
+    LPWSTR extra;
 
-    va_start(ap, message);
-    vasprintf(&extra, message, ap);
+    va_start(ap, format);
+    vaswprintf(&extra, format, ap);
     va_end(ap);
 
-    return error_push("%s: %d: %s", extra, code, errstr);
+    return error_push(L"%s: %d: %s", extra, code, errstr);
 }
 
-char *error_pop()
+LPWSTR error_pop()
 {
     if (errors == NULL) {
         return NULL;
@@ -148,7 +148,7 @@ char *error_pop()
         return NULL;
     }
 
-    char *message = item->message;
+    LPWSTR message = item->message;
     _aligned_free(item);
 
     return message;
@@ -159,10 +159,10 @@ char *error_pop()
  */
 RESULT errors_output_all()
 {
-    char *message;
+    LPWSTR message;
 
     while (NULL != (message = error_pop())) {
-        fprintf(stderr, "%s\n", message);
+        fwprintf(stderr, L"%s\n", message);
     }
 
     errors_destroy();

@@ -38,7 +38,7 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="..\resources\Icon_amphp.ico">
+    <Image Include="resources\Icon_amphp.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
