@@ -20,6 +20,9 @@
     <ClInclude Include="resources\resource.h">
       <Filter>Resource Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\Encoding.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\ProcessWrapper.c">
@@ -38,7 +41,7 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="..\resources\Icon_amphp.ico">
+    <Image Include="resources\Icon_amphp.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
