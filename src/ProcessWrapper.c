@@ -1,8 +1,13 @@
+#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <WS2tcpip.h>
+
 #include "Errors.h"
 #include "Args.h"
 #include "Encoding.h"
+
+#include "Loop.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -87,10 +92,10 @@ WSADATA wsa_data;
  */
 static void dword_to_buffer(const DWORD value, char* buffer)
 {
-    buffer[0] = value >> 24 & 0xFF;
-    buffer[1] = value >> 16 & 0xFF;
-    buffer[2] = value >> 8 & 0xFF;
-    buffer[3] = value & 0xFF;
+    buffer[0] = (char)((value >> 24) & 0xFF);
+    buffer[1] = (char)((value >> 16) & 0xFF);
+    buffer[2] = (char)((value >> 8) & 0xFF);
+    buffer[3] = (char)(value & 0xFF);
 }
 
 static BOOL socket_connect(socket_info_t* socket_info)
@@ -194,7 +199,7 @@ static BOOL socket_process_connect_writable(socket_info_t* socket_info)
 
     socket_id[0] = SIGNAL_CODE_HANDSHAKE;
     dword_to_buffer(GetCurrentProcessId(), socket_id + 1);
-    socket_id[5] = socket_info->id;
+    socket_id[5] = (char)socket_info->id;
 
     buffers[0] = socket_id_buffer;
     buffers[1] = token_buffer;
@@ -660,8 +665,51 @@ static BOOL wait_for_threads(HANDLE *copy_threads)
     return TRUE;
 }
 
+int i = 0;
+
+typedef struct _data {
+	DWORD count;
+	HANDLE event;
+} test_data_t;
+
+void CALLBACK test_tick(amp_watcher watcher)
+{
+	test_data_t *data = amp_watcher_get_data(watcher);
+	
+	printf("Tick %lu\n", ++data->count);
+
+	if (data->count == 5) {
+		SetEvent(data->event);
+	} else if (data->count == 10) {
+		amp_watcher_cancel(watcher);
+	}
+}
+
+void CALLBACK test_event(amp_watcher watcher)
+{
+	test_data_t *data = amp_watcher_get_data(watcher);
+
+	printf("Event %lu\n", data->count);
+
+	CloseHandle(data->event);
+	amp_watcher_cancel(watcher);
+}
+
 int wmain(const int argc, LPCWSTR* argv)
 {
+	test_data_t data = {0, CreateEvent(NULL, TRUE, FALSE, NULL)};
+
+	amp_loop_init();
+	
+	amp_loop_set_interval(1000, &test_tick, &data);
+	amp_loop_watch(data.event, &test_event, &data);
+
+	amp_loop_run();
+	
+	printf("End %lu\n", data.count);
+
+	return 0;
+
     DWORD exit_code;
     socket_info_t* sockets[SOCKET_COUNT];
 

@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "Errors.h"
 #include "Encoding.h"
 

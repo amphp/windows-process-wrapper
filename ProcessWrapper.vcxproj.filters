@@ -23,6 +23,9 @@
     <ClInclude Include="src\Encoding.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\Loop.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\ProcessWrapper.c">
@@ -32,6 +35,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\Errors.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Loop.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
